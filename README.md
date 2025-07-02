@@ -12,6 +12,10 @@ cp .env.example .env
 ```
 
 Then, you need to open the new `.env` file and edit the following entries.
+```shell
+nano .env
+```
+
 ```
 N8N_HOST=n8n.example.com
 
@@ -20,6 +24,20 @@ POSTGRES_NON_ROOT_PASSWORD=<MY_STRONG_PASSWORD>
 ```
 
 Feel free to edit the other entries as you need.
+
+Update your domain in Caddy file
+```shell
+nano .Caddyfile
+```
+
+```shell
+automate.example.com {
+    reverse_proxy n8n:5678 {
+      flush_interval -1
+    }
+}
+```
+
 
 ## Start
 
