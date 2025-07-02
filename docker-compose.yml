@@ -1,9 +1,11 @@
-version: '3.8'
+version: "3.8"
 
 volumes:
   db_storage:
   n8n_storage:
   redis_storage:
+  caddy_data:
+  caddy_config:
 
 x-shared: &shared
   restart: always
@@ -19,8 +21,13 @@ x-shared: &shared
     - QUEUE_HEALTH_CHECK_ACTIVE=true
     - N8N_BASIC_AUTH_ACTIVE=false
     - N8N_PROTOCOL=https
+    - N8N_HOST=${N8N_HOST}
     - VUE_APP_URL_BASE_API=https://${N8N_HOST}
     - WEBHOOK_TUNNEL_URL=https://${N8N_HOST}
+    - N8N_TRUST_PROXY=true
+    - EXECUTIONS_DATA_PRUNE=true
+    - EXECUTIONS_DATA_MAX_AGE=168
+    - EXECUTIONS_DATA_PRUNE_MAX_COUNT=5000
   links:
     - postgres
     - redis
@@ -33,24 +40,24 @@ x-shared: &shared
       condition: service_healthy
 
 services:
-  https-portal:
-    image: steveltn/https-portal:1
+  caddy:
+    image: caddy:latest
+    restart: unless-stopped
     ports:
-      - '80:80'
-      - '443:443'
-    links:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+      - ./Caddyfile:/etc/caddy/Caddyfile
+    depends_on:
       - n8n
-    restart: always
-    environment:
-      DOMAINS: '${N8N_HOST} -> http://n8n:5678'
-      STAGE: ${STAGE:-staging}
-      FORCE_RENEW: 'true'
-      CUSTOM_NGINX_SERVER_CONFIG_BLOCK: |
-          proxy_buffering off;
 
   postgres:
     image: postgres:11
     restart: always
+    ports:
+      - "5432:5432"
     environment:
       - POSTGRES_USER
       - POSTGRES_PASSWORD
@@ -80,8 +87,8 @@ services:
   n8n:
     <<: *shared
     image: n8nio/n8n
-    # ports:
-    #  - 5678:5678
+    expose:
+      - "5678"
 
   n8n-worker:
     <<: *shared
