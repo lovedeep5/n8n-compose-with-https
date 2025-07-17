@@ -1,3 +1,4 @@
+# docker-compose.yml
 version: "3.8"
 
 volumes:
@@ -5,10 +6,10 @@ volumes:
   n8n_storage:
   redis_storage:
   caddy_data:
-  caddy_config:
 
 x-shared: &shared
   restart: always
+  image: docker.n8n.io/n8nio/n8n
   environment:
     - DB_TYPE=postgresdb
     - DB_POSTGRESDB_HOST=postgres
@@ -19,20 +20,12 @@ x-shared: &shared
     - EXECUTIONS_MODE=queue
     - QUEUE_BULL_REDIS_HOST=redis
     - QUEUE_HEALTH_CHECK_ACTIVE=true
-    - N8N_BASIC_AUTH_ACTIVE=false
-    - N8N_PROTOCOL=https
-    - N8N_HOST=${N8N_HOST}
-    - VUE_APP_URL_BASE_API=https://${N8N_HOST}
-    - WEBHOOK_TUNNEL_URL=https://${N8N_HOST}
-    - N8N_TRUST_PROXY=true
-    - EXECUTIONS_DATA_PRUNE=true
-    - EXECUTIONS_DATA_MAX_AGE=168
-    - EXECUTIONS_DATA_PRUNE_MAX_COUNT=5000
+    - N8N_ENCRYPTION_KEY=${ENCRYPTION_KEY}
   links:
     - postgres
     - redis
   volumes:
-    - n8n_storage:/home/node/
+    - n8n_storage:/home/node/.n8n
   depends_on:
     redis:
       condition: service_healthy
@@ -40,24 +33,9 @@ x-shared: &shared
       condition: service_healthy
 
 services:
-  caddy:
-    image: caddy:latest
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - caddy_data:/data
-      - caddy_config:/config
-      - ./Caddyfile:/etc/caddy/Caddyfile
-    depends_on:
-      - n8n
-
   postgres:
-    image: postgres:11
+    image: postgres:16
     restart: always
-    ports:
-      - "5432:5432"
     environment:
       - POSTGRES_USER
       - POSTGRES_PASSWORD
@@ -68,7 +46,11 @@ services:
       - db_storage:/var/lib/postgresql/data
       - ./init-data.sh:/docker-entrypoint-initdb.d/init-data.sh
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -h localhost -U ${POSTGRES_USER} -d ${POSTGRES_DB}']
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -h localhost -U ${POSTGRES_USER} -d ${POSTGRES_DB}",
+        ]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -79,19 +61,32 @@ services:
     volumes:
       - redis_storage:/data
     healthcheck:
-      test: ['CMD', 'redis-cli', 'ping']
+      test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 5s
       retries: 10
 
   n8n:
     <<: *shared
-    image: n8nio/n8n
-    expose:
-      - "5678"
+    # no ports: section – Caddy will proxy
+    depends_on:
+      - postgres
+      - redis
 
   n8n-worker:
     <<: *shared
-    image: n8nio/n8n
+    command: worker
+    depends_on:
+      - n8n
+
+  caddy:
+    image: caddy:2-alpine
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
     depends_on:
       - n8n
